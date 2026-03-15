@@ -6,14 +6,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
-
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 )
 
-// CloneShallow clones a repo to a temp directory with depth=1.
+// CloneShallow clones a repo to a temp directory with depth=1 using system git.
+// This ensures all user-configured authentication (SSH keys, credential helpers) works.
 // Returns the path to the cloned repo. Caller must clean up.
 func CloneShallow(ctx context.Context, url string) (string, error) {
 	tmpDir, err := os.MkdirTemp("", "skills-clone-*")
@@ -21,13 +20,11 @@ func CloneShallow(ctx context.Context, url string) (string, error) {
 		return "", fmt.Errorf("create temp dir: %w", err)
 	}
 
-	_, err = git.PlainCloneContext(ctx, tmpDir, false, &git.CloneOptions{
-		URL:           url,
-		Depth:         1,
-		SingleBranch:  true,
-		ReferenceName: plumbing.HEAD,
-	})
-	if err != nil {
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--single-branch", url, tmpDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
 		if removeErr := os.RemoveAll(tmpDir); removeErr != nil {
 			return "", fmt.Errorf("clone %s: %w (also failed to clean up temp dir: %v)", url, err, removeErr)
 		}
