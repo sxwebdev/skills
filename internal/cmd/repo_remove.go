@@ -59,7 +59,8 @@ func RepoRemoveCmd() *cli.Command {
 					}
 					if ok {
 						for _, name := range toRemove {
-							if err := installer.RemoveSkill(name, cfg.Agents); err != nil {
+							skill := cfg.Skills[name]
+							if err := installer.RemoveSkill(name, cfg.Agents, skill.Project); err != nil {
 								fmt.Printf("⚠ Failed to remove %s: %v\n", name, err)
 								continue
 							}

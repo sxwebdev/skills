@@ -25,15 +25,15 @@ func DoctorCmd() *cli.Command {
 			}
 			fmt.Println("✓ Config loaded")
 
-			// Check skills directory
+			// Check global skills directory
 			if _, err := os.Stat(config.SkillsInstallDir()); os.IsNotExist(err) {
-				fmt.Println("✗ Skills directory missing:", config.SkillsInstallDir())
+				fmt.Println("✗ Global skills directory missing:", config.SkillsInstallDir())
 				issues++
 			} else {
-				fmt.Println("✓ Skills directory exists")
+				fmt.Println("✓ Global skills directory exists")
 			}
 
-			// Check agent directories
+			// Check global agent directories
 			for _, agent := range cfg.Agents {
 				dir := config.AgentSkillsDir(agent)
 				if dir == "" {
@@ -49,24 +49,29 @@ func DoctorCmd() *cli.Command {
 
 			// Check each skill
 			for name, skill := range cfg.Skills {
-				skillDir := filepath.Join(config.SkillsInstallDir(), name)
+				skillDir := filepath.Join(config.ResolveSkillsInstallDir(skill.Project), name)
+
+				scope := "global"
+				if skill.Project != "" {
+					scope = skill.Project
+				}
 
 				// Check skill directory
 				if _, err := os.Stat(skillDir); os.IsNotExist(err) {
-					fmt.Printf("✗ Skill %q: directory missing at %s\n", name, skillDir)
+					fmt.Printf("✗ Skill %q [%s]: directory missing at %s\n", name, scope, skillDir)
 					issues++
 					continue
 				}
 
 				// Check repo is registered
 				if _, exists := cfg.Repos[skill.Repo]; !exists {
-					fmt.Printf("⚠ Skill %q: repo %s not registered (orphaned skill)\n", name, AliasFromURL(skill.Repo))
+					fmt.Printf("⚠ Skill %q [%s]: repo %s not registered (orphaned skill)\n", name, scope, AliasFromURL(skill.Repo))
 					issues++
 				}
 
 				// Check symlinks
 				for _, agent := range cfg.Agents {
-					agentDir := config.AgentSkillsDir(agent)
+					agentDir := config.ResolveAgentSkillsDir(skill.Project, agent)
 					if agentDir == "" {
 						continue
 					}
@@ -74,7 +79,7 @@ func DoctorCmd() *cli.Command {
 
 					target, err := os.Readlink(linkPath)
 					if err != nil {
-						fmt.Printf("✗ Skill %q: symlink missing for %s\n", name, agent)
+						fmt.Printf("✗ Skill %q [%s]: symlink missing for %s\n", name, scope, agent)
 						issues++
 						continue
 					}
@@ -85,20 +90,21 @@ func DoctorCmd() *cli.Command {
 						abs = filepath.Join(agentDir, target)
 					}
 					if _, err := os.Stat(abs); os.IsNotExist(err) {
-						fmt.Printf("✗ Skill %q: broken symlink for %s → %s\n", name, agent, target)
+						fmt.Printf("✗ Skill %q [%s]: broken symlink for %s → %s\n", name, scope, agent, target)
 						issues++
 					}
 				}
 			}
 
-			// Check for orphaned directories in skills dir
+			// Check for orphaned directories in global skills dir
 			entries, err := os.ReadDir(config.SkillsInstallDir())
 			if err == nil {
 				for _, entry := range entries {
 					if !entry.IsDir() {
 						continue
 					}
-					if _, exists := cfg.Skills[entry.Name()]; !exists {
+					skill, exists := cfg.Skills[entry.Name()]
+					if !exists || skill.Project != "" {
 						fmt.Printf("⚠ Orphaned directory: %s\n", filepath.Join(config.SkillsInstallDir(), entry.Name()))
 						issues++
 					}

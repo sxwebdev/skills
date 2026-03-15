@@ -29,18 +29,34 @@ func UpdateCmd() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			projectRoot, err := resolveProject(cmd)
+			if err != nil {
+				return err
+			}
+
 			cfg := config.MustLoad()
 			dryRun := cmd.Bool("dry-run")
 			filterSkill := cmd.String("skill")
 
-			if len(cfg.Skills) == 0 {
+			// Filter skills by project if --local or --project
+			skills := cfg.Skills
+			if projectRoot != "" {
+				skills = make(map[string]config.SkillInfo)
+				for name, skill := range cfg.Skills {
+					if skill.Project == projectRoot {
+						skills[name] = skill
+					}
+				}
+			}
+
+			if len(skills) == 0 {
 				fmt.Println("No skills installed.")
 				return nil
 			}
 
 			// Group skills by repo
 			repoSkills := make(map[string][]string)
-			for name, skill := range cfg.Skills {
+			for name, skill := range skills {
 				if filterSkill != "" && name != filterSkill {
 					continue
 				}
@@ -88,7 +104,7 @@ func UpdateCmd() *cli.Command {
 						continue
 					}
 
-					if err := installer.InstallSkill(name, srcDir, cfg.Agents); err != nil {
+					if err := installer.InstallSkill(name, srcDir, cfg.Agents, skill.Project); err != nil {
 						fmt.Printf("  ⚠ %s: install failed: %v\n", name, err)
 						continue
 					}

@@ -9,10 +9,11 @@ import (
 	"github.com/sxwebdev/skills/internal/config"
 )
 
-// InstallSkill copies a skill from srcDir to ~/.agents/skills/<name>/
+// InstallSkill copies a skill from srcDir to the skills directory
 // and creates symlinks for each configured agent.
-func InstallSkill(name, srcDir string, agents []string) error {
-	dstDir := filepath.Join(config.SkillsInstallDir(), name)
+// If projectRoot is empty, installs globally; otherwise installs into the project.
+func InstallSkill(name, srcDir string, agents []string, projectRoot string) error {
+	dstDir := filepath.Join(config.ResolveSkillsInstallDir(projectRoot), name)
 
 	// Remove existing if present
 	if err := os.RemoveAll(dstDir); err != nil {
@@ -24,7 +25,7 @@ func InstallSkill(name, srcDir string, agents []string) error {
 	}
 
 	for _, agent := range agents {
-		agentDir := config.AgentSkillsDir(agent)
+		agentDir := config.ResolveAgentSkillsDir(projectRoot, agent)
 		if agentDir == "" {
 			continue
 		}
@@ -52,10 +53,11 @@ func InstallSkill(name, srcDir string, agents []string) error {
 }
 
 // RemoveSkill removes a skill directory and all agent symlinks.
-func RemoveSkill(name string, agents []string) error {
+// If projectRoot is empty, removes from global; otherwise from the project.
+func RemoveSkill(name string, agents []string, projectRoot string) error {
 	// Remove agent symlinks
 	for _, agent := range agents {
-		agentDir := config.AgentSkillsDir(agent)
+		agentDir := config.ResolveAgentSkillsDir(projectRoot, agent)
 		if agentDir == "" {
 			continue
 		}
@@ -66,7 +68,7 @@ func RemoveSkill(name string, agents []string) error {
 	}
 
 	// Remove skill directory
-	dstDir := filepath.Join(config.SkillsInstallDir(), name)
+	dstDir := filepath.Join(config.ResolveSkillsInstallDir(projectRoot), name)
 	if err := os.RemoveAll(dstDir); err != nil {
 		return fmt.Errorf("remove skill dir: %w", err)
 	}

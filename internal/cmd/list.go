@@ -22,30 +22,45 @@ func ListCmd() *cli.Command {
 			},
 		},
 		Action: func(_ context.Context, cmd *cli.Command) error {
+			projectRoot, err := resolveProject(cmd)
+			if err != nil {
+				return err
+			}
+
 			cfg := config.MustLoad()
+
+			// Filter skills by project if --local or --project is set
+			filtered := cfg.Skills
+			if projectRoot != "" {
+				filtered = make(map[string]config.SkillInfo)
+				for name, skill := range cfg.Skills {
+					if skill.Project == projectRoot {
+						filtered[name] = skill
+					}
+				}
+			}
 
 			if cmd.Bool("json") {
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
-				return enc.Encode(cfg.Skills)
+				return enc.Encode(filtered)
 			}
 
-			if len(cfg.Skills) == 0 {
+			if len(filtered) == 0 {
 				fmt.Println("No skills installed. Use 'skills repo add <url>' to get started.")
 				return nil
 			}
 
-			for name, skill := range cfg.Skills {
+			for name, skill := range filtered {
 				status := "✓"
-				// Check if skill dir exists
-				skillDir := filepath.Join(config.SkillsInstallDir(), name)
+				skillDir := filepath.Join(config.ResolveSkillsInstallDir(skill.Project), name)
 				if _, err := os.Stat(skillDir); os.IsNotExist(err) {
 					status = "⚠ missing"
 				}
 
 				// Check symlinks
 				for _, agent := range cfg.Agents {
-					agentDir := config.AgentSkillsDir(agent)
+					agentDir := config.ResolveAgentSkillsDir(skill.Project, agent)
 					if agentDir == "" {
 						continue
 					}
@@ -63,8 +78,13 @@ func ListCmd() *cli.Command {
 					}
 				}
 
-				fmt.Printf("  %s %s  (%s)  updated: %s\n",
-					status, name, AliasFromURL(skill.Repo),
+				scope := "global"
+				if skill.Project != "" {
+					scope = skill.Project
+				}
+
+				fmt.Printf("  %s %s  (%s)  [%s]  updated: %s\n",
+					status, name, AliasFromURL(skill.Repo), scope,
 					skill.UpdatedAt.Format("2006-01-02"),
 				)
 			}

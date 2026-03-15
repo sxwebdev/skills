@@ -30,7 +30,8 @@ func RemoveCmd() *cli.Command {
 			name := cmd.Args().First()
 			cfg := config.MustLoad()
 
-			if _, exists := cfg.Skills[name]; !exists {
+			skill, exists := cfg.Skills[name]
+			if !exists {
 				return fmt.Errorf("skill %q is not installed", name)
 			}
 
@@ -45,7 +46,7 @@ func RemoveCmd() *cli.Command {
 				}
 			}
 
-			if err := installer.RemoveSkill(name, cfg.Agents); err != nil {
+			if err := installer.RemoveSkill(name, cfg.Agents, skill.Project); err != nil {
 				return fmt.Errorf("remove skill: %w", err)
 			}
 

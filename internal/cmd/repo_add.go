@@ -35,6 +35,11 @@ func RepoAddCmd() *cli.Command {
 				return fmt.Errorf("usage: skills repo add <url>")
 			}
 
+			projectRoot, err := resolveProject(cmd)
+			if err != nil {
+				return err
+			}
+
 			rawURL := cmd.Args().First()
 			url, err := NormalizeRepoURL(rawURL)
 			if err != nil {
@@ -129,7 +134,7 @@ func RepoAddCmd() *cli.Command {
 					continue
 				}
 
-				if err := installer.InstallSkill(skill.Name, skill.AbsPath, cfg.Agents); err != nil {
+				if err := installer.InstallSkill(skill.Name, skill.AbsPath, cfg.Agents, projectRoot); err != nil {
 					fmt.Printf("⚠ Failed to install %s: %v\n", skill.Name, err)
 					continue
 				}
@@ -146,6 +151,7 @@ func RepoAddCmd() *cli.Command {
 					FolderHash:  hash,
 					InstalledAt: now,
 					UpdatedAt:   now,
+					Project:     projectRoot,
 				}
 				fmt.Printf("  ✓ %s\n", skill.Name)
 			}

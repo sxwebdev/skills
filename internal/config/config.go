@@ -27,6 +27,7 @@ type SkillInfo struct {
 	FolderHash  string    `json:"folder_hash"`
 	InstalledAt time.Time `json:"installed_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Project     string    `json:"project,omitempty"` // empty = global, otherwise absolute path to project root
 }
 
 // NewDefault creates a default config.

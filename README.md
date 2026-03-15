@@ -2,7 +2,7 @@
 
 A CLI tool for managing AI agent skills from Git repositories.
 
-Skills are stored in `~/.agents/skills/` and symlinked to agent-specific directories (e.g., `~/.claude/skills/` for Claude Code).
+Skills are stored in `~/.agents/skills/` and symlinked to agent-specific directories (e.g., `~/.claude/skills/` for Claude Code). Supports both global and per-project skill installations.
 
 ## Installation
 
@@ -42,9 +42,9 @@ skills init --force  # overwrite existing config
 Adds a Git repository and offers to install skills from it. The tool clones the repo, scans for skills (directories containing `SKILL.md` in `.agents/skills/` or `skills/`), and presents an interactive multi-select prompt.
 
 ```bash
-skills repo add owner/repo                        # shorthand for GitHub
-skills repo add https://github.com/owner/repo.git # full URL
-skills repo add owner/repo --all                  # install all skills without prompting
+skills repo add owner/repo                         # shorthand for GitHub
+skills repo add https://github.com/owner/repo.git  # full URL
+skills repo add owner/repo --all                   # install all skills without prompting
 skills repo add owner/repo --skip-install          # register repo only
 ```
 
@@ -102,10 +102,34 @@ Diagnoses issues: missing directories, broken symlinks, orphaned skills, and con
 skills doctor
 ```
 
+## Per-Project Skills
+
+By default, skills are installed globally. Use `--local` or `--project` flags to install skills into a specific project instead.
+
+```bash
+# Install skills into the current project (auto-detects project root via .git)
+skills repo add owner/repo --local
+
+# Install skills into a specific project
+skills repo add owner/repo --project /path/to/project
+
+# List only skills for the current project
+skills list --local
+
+# Update only project-local skills
+skills update --local
+
+# Short flags work too
+skills repo add owner/repo -l
+skills repo add owner/repo -p /path/to/project
+```
+
+When installed per-project, skills are stored in `<project>/.agents/skills/` with symlinks at `<project>/.claude/skills/`. The global config at `~/.skills/config.json` tracks all skills — both global and per-project.
+
 ## How It Works
 
-1. **Config** is stored at `~/.skills/config.json` — tracks repos, installed skills, and agent integrations.
-2. **Skills** are copied to `~/.agents/skills/<name>/`.
+1. **Config** is stored at `~/.skills/config.json` — tracks repos, installed skills (global and per-project), and agent integrations.
+2. **Skills** are copied to `~/.agents/skills/<name>/` (global) or `<project>/.agents/skills/<name>/` (per-project).
 3. **Symlinks** are created for each configured agent (e.g., `~/.claude/skills/<name>` → `../../.agents/skills/<name>`).
 4. **Updates** use folder content hashing (SHA1) to detect changes — only modified skills are reinstalled.
 
@@ -113,7 +137,7 @@ skills doctor
 
 A repository should contain skills in one of these locations:
 
-```
+```text
 repo/
 ├── .agents/
 │   └── skills/
