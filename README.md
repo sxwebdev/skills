@@ -1,5 +1,10 @@
 # skills
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/sxwebdev/skills.svg)](https://pkg.go.dev/github.com/sxwebdev/skills)
+[![Go Version](https://img.shields.io/badge/go-1.26-blue)](https://go.dev/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/sxwebdev/skills)](https://goreportcard.com/report/github.com/sxwebdev/skills)
+[![License](https://img.shields.io/github/license/sxwebdev/skills)](LICENSE)
+
 A CLI tool for managing AI agent skills from Git repositories.
 
 Skills are stored in `~/.agents/skills/` and symlinked to agent-specific directories (e.g., `~/.claude/skills/` for Claude Code). Supports both global and per-project skill installations.
