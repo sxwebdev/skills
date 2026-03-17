@@ -35,6 +35,7 @@ func main() {
 			commands.UpdateCmd(),
 			commands.RemoveCmd(),
 			commands.DoctorCmd(),
+			commands.PromptCmd(),
 		},
 	}
 

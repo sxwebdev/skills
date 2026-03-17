@@ -107,6 +107,15 @@ Diagnoses issues: missing directories, broken symlinks, orphaned skills, and con
 skills doctor
 ```
 
+### `skills prompt build <name>`
+
+Generates a ready-to-use prompt for creating a new skill. The output can be copied into Claude Code or piped to a file.
+
+```bash
+skills prompt build my-skill          # print prompt to stdout
+skills prompt build my-skill > p.md   # save to file
+```
+
 ## Per-Project Skills
 
 By default, skills are installed globally. Use `--local` or `--project` flags to install skills into a specific project instead.
