@@ -16,3 +16,6 @@ lint:
 
 clean:
 	rm -rf bin/
+
+fmt:
+	gofumpt -l -w .

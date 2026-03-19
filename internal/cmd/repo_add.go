@@ -83,7 +83,7 @@ func RepoAddCmd() *cli.Command {
 			}
 
 			// Clone repo
-			fmt.Printf("Cloning %s...\n", AliasFromURL(url))
+			fmt.Printf("Checking repo %s. Please wait...\n", AliasFromURL(url))
 			tmpDir, err := gitutil.CloneShallow(ctx, url)
 			if err != nil {
 				return fmt.Errorf("clone failed: %w", err)

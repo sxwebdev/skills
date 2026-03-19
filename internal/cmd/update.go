@@ -15,8 +15,9 @@ import (
 
 func UpdateCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "update",
-		Usage: "Update installed skills from their repositories",
+		Name:      "update",
+		Usage:     "Update installed skills from their repositories",
+		ArgsUsage: "[owner/repo]",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "skill",
@@ -37,6 +38,7 @@ func UpdateCmd() *cli.Command {
 			cfg := config.MustLoad()
 			dryRun := cmd.Bool("dry-run")
 			filterSkill := cmd.String("skill")
+			filterRepo := cmd.Args().First() // optional owner/repo
 
 			// Filter skills by project if --local or --project
 			skills := cfg.Skills
@@ -60,17 +62,23 @@ func UpdateCmd() *cli.Command {
 				if filterSkill != "" && name != filterSkill {
 					continue
 				}
+				if filterRepo != "" && AliasFromURL(skill.Repo) != filterRepo {
+					continue
+				}
 				repoSkills[skill.Repo] = append(repoSkills[skill.Repo], name)
 			}
 
 			if filterSkill != "" && len(repoSkills) == 0 {
 				return fmt.Errorf("skill %q not found", filterSkill)
 			}
+			if filterRepo != "" && len(repoSkills) == 0 {
+				return fmt.Errorf("no skills found from repo %q", filterRepo)
+			}
 
 			var updated, upToDate int
 
 			for repoURL, skillNames := range repoSkills {
-				fmt.Printf("Checking %s...\n", AliasFromURL(repoURL))
+				fmt.Printf("Checking %s. Please wait...\n", AliasFromURL(repoURL))
 
 				tmpDir, err := gitutil.CloneShallow(ctx, repoURL)
 				if err != nil {

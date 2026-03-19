@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/sxwebdev/skills/internal/config"
 	"github.com/urfave/cli/v3"
@@ -51,7 +52,14 @@ func ListCmd() *cli.Command {
 				return nil
 			}
 
-			for name, skill := range filtered {
+			names := make([]string, 0, len(filtered))
+			for name := range filtered {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+
+			for _, name := range names {
+				skill := filtered[name]
 				status := "✓"
 				skillDir := filepath.Join(config.ResolveSkillsInstallDir(skill.Project), name)
 				if _, err := os.Stat(skillDir); os.IsNotExist(err) {

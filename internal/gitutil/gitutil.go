@@ -1,6 +1,7 @@
 package gitutil
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"fmt"
@@ -21,14 +22,15 @@ func CloneShallow(ctx context.Context, url string) (string, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--single-branch", url, tmpDir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		errMsg := stderr.String()
 		if removeErr := os.RemoveAll(tmpDir); removeErr != nil {
-			return "", fmt.Errorf("clone %s: %w (also failed to clean up temp dir: %v)", url, err, removeErr)
+			return "", fmt.Errorf("clone %s: %w\n%s(also failed to clean up temp dir: %v)", url, err, errMsg, removeErr)
 		}
-		return "", fmt.Errorf("clone %s: %w", url, err)
+		return "", fmt.Errorf("clone %s: %w\n%s", url, err, errMsg)
 	}
 
 	return tmpDir, nil
