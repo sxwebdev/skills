@@ -12,7 +12,7 @@ const skillPromptTemplate = `You are a skill generator for a Claude Code agent s
 
 ## Task
 
-Generate a complete skill named ` + "`{SKILL_NAME}`" + ` and save all files to ` + "`skills/{SKILL_NAME}/`" + `.
+Generate a complete skill named ` + "`{SKILL_NAME}`" + ` and save all files to ` + "`./skills/{SKILL_NAME}/`" + ` in the current repository.
 
 ## What is a skill
 
@@ -36,7 +36,7 @@ Not every skill needs all directories — create only what the skill actually re
 
 ## Required file: SKILL.md
 
-Every skill must have ` + "`skills/{SKILL_NAME}/SKILL.md`" + ` with YAML frontmatter and a markdown body.
+Every skill must have ` + "`./skills/{SKILL_NAME}/SKILL.md`" + ` with YAML frontmatter and a markdown body.
 
 ### Frontmatter format
 
@@ -125,10 +125,10 @@ Based on the skill name ` + "`{SKILL_NAME}`" + ` and the following description:
 
 Generate the following (skip directories that don't apply):
 
-1. ` + "`skills/{SKILL_NAME}/SKILL.md`" + ` — frontmatter with a high-quality triggering description + instructions under 500 lines, including at least one input/output example
-2. ` + "`skills/{SKILL_NAME}/references/`" + ` — domain-specific documentation, organized by variant if multi-framework
-3. ` + "`skills/{SKILL_NAME}/scripts/`" + ` — executable code for deterministic/repetitive operations
-4. ` + "`skills/{SKILL_NAME}/assets/`" + ` — output templates and static files
+1. ` + "`./skills/{SKILL_NAME}/SKILL.md`" + ` — frontmatter with a high-quality triggering description + instructions under 500 lines, including at least one input/output example
+2. ` + "`./skills/{SKILL_NAME}/references/`" + ` — domain-specific documentation, organized by variant if multi-framework
+3. ` + "`./skills/{SKILL_NAME}/scripts/`" + ` — executable code for deterministic/repetitive operations
+4. ` + "`./skills/{SKILL_NAME}/assets/`" + ` — output templates and static files
 5. Any additional files that make sense for the skill's domain
 
 ## Quality criteria
@@ -141,6 +141,8 @@ Generate the following (skip directories that don't apply):
 - **Progressive**: Heavy content lives in ` + "`references/`" + `, keeping SKILL.md under 500 lines.
 - **Exemplified**: SKILL.md contains at least one realistic input/output example.
 - **Reasoned**: Instructions explain WHY, not just WHAT — this helps Claude handle edge cases.
+
+IMPORTANT: All files must be written to the ` + "`./skills/`" + ` directory in the current repository. Use relative paths starting with ` + "`./skills/{SKILL_NAME}/`" + `.
 
 Write all files now using the Write tool.
 `
