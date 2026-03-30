@@ -67,21 +67,6 @@ func RepoAddCmd() *cli.Command {
 				return nil
 			}
 
-			// Ask to download
-			if !cmd.Bool("all") {
-				ok, err := prompt.Confirm("Download skills from this repository?", true)
-				if err != nil {
-					return err
-				}
-				if !ok {
-					if err := cfg.Save(); err != nil {
-						return err
-					}
-					fmt.Println("✓ Repository registered (skills not installed):", AliasFromURL(url))
-					return nil
-				}
-			}
-
 			// Clone repo
 			fmt.Printf("Checking repo %s. Please wait...\n", AliasFromURL(url))
 			tmpDir, err := gitutil.CloneShallow(ctx, url)

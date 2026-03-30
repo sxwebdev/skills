@@ -21,14 +21,31 @@ func SelectSkills(skills []registry.DiscoveredSkill) ([]registry.DiscoveredSkill
 		return skills, nil
 	}
 
+	cols, rows, _ := term.GetSize(int(os.Stdout.Fd()))
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+
+	// Prefix width: selector "> " + checkbox "• " = ~6 chars
+	maxLabelWidth := cols - 6
+	maxLabelWidth = max(maxLabelWidth, 20)
+
 	options := make([]huh.Option[string], len(skills))
 	for i, s := range skills {
 		label := s.Name
 		if s.Description != "" {
 			label = fmt.Sprintf("%s — %s", s.Name, s.Description)
 		}
+		if len(label) > maxLabelWidth {
+			label = label[:maxLabelWidth-1] + "…"
+		}
 		options[i] = huh.NewOption(label, s.Name)
 	}
+
+	height := rows - 2
 
 	var selected []string
 	form := huh.NewForm(
@@ -36,9 +53,10 @@ func SelectSkills(skills []registry.DiscoveredSkill) ([]registry.DiscoveredSkill
 			huh.NewMultiSelect[string]().
 				Title("Select skills to install").
 				Options(options...).
+				Height(height).
 				Value(&selected),
 		),
-	)
+	).WithHeight(height)
 
 	if err := form.Run(); err != nil {
 		return nil, fmt.Errorf("prompt: %w", err)
