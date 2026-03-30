@@ -12,10 +12,10 @@ test:
 	go test ./...
 
 lint:
-	golangci-lint run
+	go tool golangci-lint run
 
 clean:
 	rm -rf bin/
 
 fmt:
-	gofumpt -l -w .
+	go tool gofumpt -l -w .

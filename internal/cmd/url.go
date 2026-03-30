@@ -46,9 +46,8 @@ func AliasFromURL(url string) string {
 	// Handle SSH URLs
 	if strings.HasPrefix(url, "git@") {
 		// git@github.com:owner/repo
-		parts := strings.SplitN(url, ":", 2)
-		if len(parts) == 2 {
-			return parts[1]
+		if _, after, found := strings.Cut(url, ":"); found {
+			return after
 		}
 	}
 

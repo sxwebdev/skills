@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 
 	"github.com/sxwebdev/skills/internal/config"
 	"github.com/urfave/cli/v3"
@@ -52,11 +54,7 @@ func ListCmd() *cli.Command {
 				return nil
 			}
 
-			names := make([]string, 0, len(filtered))
-			for name := range filtered {
-				names = append(names, name)
-			}
-			sort.Strings(names)
+			names := slices.Sorted(maps.Keys(filtered))
 
 			for _, name := range names {
 				skill := filtered[name]
@@ -86,10 +84,7 @@ func ListCmd() *cli.Command {
 					}
 				}
 
-				scope := "global"
-				if skill.Project != "" {
-					scope = skill.Project
-				}
+				scope := cmp.Or(skill.Project, "global")
 
 				fmt.Printf("  %s %s  (%s)  [%s]  updated: %s\n",
 					status, name, AliasFromURL(skill.Repo), scope,

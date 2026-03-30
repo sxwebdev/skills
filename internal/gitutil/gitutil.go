@@ -2,6 +2,7 @@ package gitutil
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha1"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 )
 
 // CloneShallow clones a repo to a temp directory with depth=1 using system git.
@@ -78,8 +79,8 @@ func ComputeFolderHash(dir string) (string, error) {
 		return "", fmt.Errorf("walk dir: %w", err)
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].relPath < entries[j].relPath
+	slices.SortFunc(entries, func(a, b fileEntry) int {
+		return cmp.Compare(a.relPath, b.relPath)
 	})
 
 	h := sha1.New()

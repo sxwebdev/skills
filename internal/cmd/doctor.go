@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -51,10 +52,7 @@ func DoctorCmd() *cli.Command {
 			for name, skill := range cfg.Skills {
 				skillDir := filepath.Join(config.ResolveSkillsInstallDir(skill.Project), name)
 
-				scope := "global"
-				if skill.Project != "" {
-					scope = skill.Project
-				}
+				scope := cmp.Or(skill.Project, "global")
 
 				// Check skill directory
 				if _, err := os.Stat(skillDir); os.IsNotExist(err) {
