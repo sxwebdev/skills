@@ -133,7 +133,7 @@ func runAdd(ctx context.Context, cmd *cli.Command) error {
 			continue
 		}
 
-		hash, err := fetched.FolderHash(skill.PathInRepo)
+		hash, hashKind, err := fetched.FolderHash(skill.PathInRepo)
 		if err != nil {
 			ui.Warn("Failed to compute hash for %s: %v", skill.Name, err)
 			continue
@@ -142,9 +142,10 @@ func runAdd(ctx context.Context, cmd *cli.Command) error {
 		now := time.Now().UTC()
 		cfg.Skills[skill.Name] = config.SkillInfo{
 			Repo:        repoKey,
+			Description: skill.Description,
 			PathInRepo:  skill.PathInRepo,
 			FolderHash:  hash,
-			HashKind:    fetched.HashKind,
+			HashKind:    hashKind,
 			Agents:      slices.Clone(agentList),
 			Mode:        mode,
 			Ref:         src.Ref,

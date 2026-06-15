@@ -61,7 +61,7 @@ skills add owner/repo -a cursor -g    # install to the cursor agent, globally
 skills add owner/repo --copy          # copy into agent dirs instead of symlinking
 ```
 
-**Sources:** GitHub (with a Trees-API fast path that avoids a full clone), GitLab (incl. self-hosted via `/-/tree/` URLs), generic git over HTTPS/SSH (Gitea, OneDev, …), RFC 8615 well-known endpoints (`/.well-known/agent-skills/index.json`), and local directories.
+**Sources:** GitHub, GitLab (incl. self-hosted via `/-/tree/` URLs), generic git over HTTPS/SSH (Gitea, OneDev, …), RFC 8615 well-known endpoints (`/.well-known/agent-skills/index.json`), and local directories. Content is fetched with a shallow `git clone` (one packfile — far faster than many per-file HTTP requests); for GitHub a single git-tree-SHA request is also recorded so `update` can detect changes without re-cloning.
 
 ### `skills use <source>[@<skill>]`
 
@@ -82,7 +82,7 @@ skills find pdf            # substring search over installed skills
 
 ### `skills update`
 
-Updates installed skills from their sources. For GitHub, change detection uses the git-tree SHA (no re-clone); for other sources it clones and compares a content hash.
+Updates installed skills from their sources. For GitHub, change detection uses a single git-tree-SHA request and only changed repos are re-cloned; for other sources it clones and compares a content hash.
 
 ```bash
 skills update
@@ -125,7 +125,7 @@ When installed per-project, skills are stored in `<project>/.agents/skills/` wit
 1. **Config** at `~/.skills/config.json` tracks sources, installed skills (global and per-project), and agents. Created lazily on first install; migrated automatically across schema versions.
 2. **Skills** are copied to `~/.agents/skills/<name>/` (global) or `<project>/.agents/skills/<name>/` (per-project).
 3. **Links** are created for each agent: a relative symlink by default, falling back to a copy when symlinking isn't possible (or with `--copy`).
-4. **Updates** use the GitHub git-tree SHA where available, otherwise a deterministic SHA1 folder hash — only changed skills are reinstalled.
+4. **Content** is fetched with a shallow `git clone`. **Updates** compare the GitHub git-tree SHA where available (one request, no clone unless something changed), otherwise a deterministic SHA1 folder hash — only changed skills are reinstalled.
 
 ## Security
 

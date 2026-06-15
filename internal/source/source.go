@@ -7,11 +7,20 @@ package source
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
+
+// fetchTimeout bounds individual HTTP fetches (tree/raw/well-known).
+const fetchTimeout = 15 * time.Second
+
+// httpClient is shared so connections are pooled across the many sequential
+// raw/tree/artifact fetches a single install performs.
+var httpClient = &http.Client{Timeout: fetchTimeout}
 
 // Kind identifies the type of a parsed source.
 type Kind int
@@ -58,18 +67,16 @@ type Source struct {
 // Fetched is the result of materializing a Source into a local directory.
 type Fetched struct {
 	// Dir is a directory that registry.ScanRepo can scan. It may be the source
-	// directory itself (local) or a temp clone/materialized tree.
+	// directory itself (local) or a temp clone.
 	Dir string
 	// Cleanup removes any temporary resources. Always non-nil.
 	Cleanup func()
-	// HashKind is the change-detection hash kind for skills from this source
-	// ("sha1" or "tree-sha"), matching config.HashKind* values.
-	HashKind string
-	// FolderHash returns the change-detection hash for a skill folder given its
-	// path relative to the repo root (e.g. "skills/my-skill"). For clone/local
-	// sources this hashes the on-disk folder; for the GitHub fast-path it
-	// returns the git-tree SHA captured during fetch.
-	FolderHash func(skillPathInRepo string) (string, error)
+	// FolderHash returns the change-detection hash and its kind ("sha1" or
+	// "tree-sha", matching config.HashKind*) for a skill folder given its path
+	// relative to the repo root (e.g. "skills/my-skill"). Clone/local sources
+	// return a SHA1 of the on-disk folder; GitHub additionally attaches the
+	// git-tree SHA so `update` can detect changes without re-cloning.
+	FolderHash func(skillPathInRepo string) (hash, kind string, err error)
 }
 
 // Provider matches, parses, and fetches a class of sources.
@@ -159,6 +166,18 @@ func splitFragment(raw string) (base, ref, skill string) {
 		}
 	}
 	return base, ref, skill
+}
+
+// splitSkillSuffix splits a trailing "@<skill>" selector from raw, but only
+// when the suffix is a bare skill name (no "/" or ":"), so SSH URLs such as
+// git@host:owner/repo and ssh://git@host/... are left intact.
+func splitSkillSuffix(raw string) (base, skill string) {
+	if i := strings.LastIndex(raw, "@"); i > 0 {
+		if s := raw[i+1:]; s != "" && !strings.ContainsAny(s, "/:") {
+			return raw[:i], s
+		}
+	}
+	return raw, ""
 }
 
 func isLocalPath(raw string) bool {

@@ -17,14 +17,24 @@ type DiscoveredSkill struct {
 	AbsPath     string // absolute path in temp clone
 }
 
-// ScanRepo scans a cloned repo directory for skills.
-// It looks for skills in .agents/skills/ and skills/ directories.
+// ScanRepo scans a cloned repo directory for skills. It looks for skills in
+// skills/, .agents/skills/, and any .<agent>/skills/ container (e.g.
+// .claude/skills/, .cursor/skills/) so on-disk discovery matches the GitHub
+// fast-path and the documented layout.
 func ScanRepo(repoDir string) ([]DiscoveredSkill, error) {
 	var skills []DiscoveredSkill
 
 	searchPaths := []string{
-		filepath.Join(repoDir, ".agents", "skills"),
 		filepath.Join(repoDir, "skills"),
+		filepath.Join(repoDir, ".agents", "skills"),
+	}
+	// Add any top-level dotdir that holds a skills/ subdir (.claude, .cursor, …).
+	if entries, err := os.ReadDir(repoDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() && strings.HasPrefix(e.Name(), ".") && e.Name() != ".git" && e.Name() != ".agents" {
+				searchPaths = append(searchPaths, filepath.Join(repoDir, e.Name(), "skills"))
+			}
+		}
 	}
 
 	for _, searchPath := range searchPaths {

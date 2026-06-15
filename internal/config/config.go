@@ -38,6 +38,7 @@ type RepoInfo struct {
 
 type SkillInfo struct {
 	Repo        string    `json:"repo"`
+	Description string    `json:"description,omitempty"`
 	PathInRepo  string    `json:"path_in_repo"`
 	FolderHash  string    `json:"folder_hash"`
 	HashKind    string    `json:"hash_kind,omitempty"` // "sha1" | "tree-sha"

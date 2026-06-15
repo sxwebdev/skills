@@ -42,19 +42,19 @@ func runFind(_ context.Context, cmd *cli.Command) error {
 
 	var results []foundSkill
 	for name, skill := range cfg.Skills {
-		desc := ""
-		dir := filepath.Join(config.ResolveSkillsInstallDir(skill.Project), name)
-		if _, d, err := registry.ReadSkillMeta(dir); err == nil {
-			desc = d
+		// Prefer the description recorded at install time; only touch disk for
+		// older entries that predate the stored description.
+		desc := skill.Description
+		if desc == "" {
+			dir := filepath.Join(config.ResolveSkillsInstallDir(skill.Project), name)
+			if _, d, err := registry.ReadSkillMeta(dir); err == nil {
+				desc = d
+			}
 		}
 		if query != "" && !strings.Contains(strings.ToLower(name), query) && !strings.Contains(strings.ToLower(desc), query) {
 			continue
 		}
-		scope := "global"
-		if skill.Project != "" {
-			scope = skill.Project
-		}
-		results = append(results, foundSkill{Name: name, Description: desc, Source: skill.Repo, Scope: scope})
+		results = append(results, foundSkill{Name: name, Description: desc, Source: skill.Repo, Scope: scopeOf(skill)})
 	}
 
 	slices.SortFunc(results, func(a, b foundSkill) int { return strings.Compare(a.Name, b.Name) })

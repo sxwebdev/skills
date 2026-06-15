@@ -4,23 +4,49 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
-	"path"
+	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
+	"sync"
 
 	"github.com/sxwebdev/skills/internal/config"
 )
 
-const fetchTimeout = 15 * time.Second
+// githubToken returns a token to authenticate GitHub API calls, raising the
+// unauthenticated 60 req/hr limit to 5000/hr. It prefers GITHUB_TOKEN/GH_TOKEN
+// and falls back to `gh auth token`, resolved at most once per process.
+var (
+	ghTokenOnce sync.Once
+	ghTokenVal  string
+)
+
+func githubToken() string {
+	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
+		return t
+	}
+	if t := os.Getenv("GH_TOKEN"); t != "" {
+		return t
+	}
+	ghTokenOnce.Do(func() {
+		out, err := exec.Command("gh", "auth", "token").Output()
+		if err == nil {
+			ghTokenVal = strings.TrimSpace(string(out))
+		}
+	})
+	return ghTokenVal
+}
 
 type githubProvider struct{}
 
 func (githubProvider) Match(raw string) bool {
 	base, _, _ := splitFragment(raw)
+	// SSH and scheme-qualified git URLs (incl. git@github.com:…) are handled by
+	// the generic git provider, which clones them directly.
+	if strings.HasPrefix(base, "git@") || strings.HasPrefix(base, "ssh://") {
+		return false
+	}
 	if strings.HasPrefix(base, "github:") {
 		return true
 	}
@@ -75,13 +101,27 @@ func githubSource(raw, owner, repo, ref, subpath, skill string) Source {
 	}
 }
 
-// Fetch tries the GitHub Trees API fast-path (no full clone). On any failure
-// it falls back to a shallow clone.
+// Fetch clones the repo for content — one packfile is far faster than fetching
+// every skill file individually over HTTP. Best-effort, it then attaches cheap
+// git-tree-SHA change detection so `update` can check for changes without
+// re-cloning; if the GitHub API is unavailable (rate limit, private repo
+// without token) it falls back to the clone's SHA1 folder hash.
 func (githubProvider) Fetch(ctx context.Context, src Source) (Fetched, error) {
-	if f, err := fetchGitHubFast(ctx, src); err == nil {
-		return f, nil
+	f, err := cloneFetch(ctx, src)
+	if err != nil {
+		return Fetched{}, err
 	}
-	return cloneFetch(ctx, src)
+	if tree := githubTree(ctx, src); tree != nil {
+		idx := folderSHAIndex(tree)
+		sha1Hash := f.FolderHash
+		f.FolderHash = func(skillPathInRepo string) (string, string, error) {
+			if sha, ok := idx[normalizeFolder(skillPathInRepo)]; ok {
+				return sha, config.HashKindTreeSHA, nil
+			}
+			return sha1Hash(skillPathInRepo) // fallback for an unmapped folder
+		}
+	}
+	return f, nil
 }
 
 type ghTreeEntry struct {
@@ -95,130 +135,50 @@ type ghTree struct {
 	Tree []ghTreeEntry `json:"tree"`
 }
 
-// fetchGitHubFast materializes skill folders from a GitHub repo using the Trees
-// API + raw.githubusercontent.com, avoiding a full clone. The returned Fetched
-// uses git-tree SHAs for change detection.
-func fetchGitHubFast(ctx context.Context, src Source) (Fetched, error) {
+func normalizeFolder(p string) string {
+	return strings.TrimSuffix(filepath.ToSlash(p), "/")
+}
+
+// githubTree fetches the recursive tree for src, trying the pinned ref then
+// HEAD/main/master. Returns nil on any failure (caller falls back to clone+SHA1).
+func githubTree(ctx context.Context, src Source) *ghTree {
 	branches := []string{"HEAD", "main", "master"}
 	if src.Ref != "" {
 		branches = []string{src.Ref}
 	}
-
-	var tree *ghTree
-	var branch string
 	for _, b := range branches {
-		t, err := fetchTree(ctx, src.OwnerRepo, b)
-		if err == nil && t != nil {
-			tree, branch = t, b
-			break
+		if t, err := fetchTree(ctx, src.OwnerRepo, b); err == nil && t != nil {
+			return t
 		}
 	}
+	return nil
+}
+
+// folderSHAIndex maps each directory path to its git-tree SHA, plus the repo
+// root ("") to the top-level tree SHA.
+func folderSHAIndex(tree *ghTree) map[string]string {
+	idx := map[string]string{"": tree.SHA}
+	for _, e := range tree.Tree {
+		if e.Type == "tree" {
+			idx[e.Path] = e.SHA
+		}
+	}
+	return idx
+}
+
+// PeekFolderHashes returns current change-detection hashes keyed by skill
+// folder path (slash-form, relative to the repo root) WITHOUT downloading any
+// content, when the provider supports it (GitHub). The bool is false when no
+// cheap peek is available and the caller must Fetch and hash on disk.
+func PeekFolderHashes(ctx context.Context, src Source) (map[string]string, string, bool) {
+	if src.Kind != KindGitHub {
+		return nil, "", false
+	}
+	tree := githubTree(ctx, src)
 	if tree == nil {
-		return Fetched{}, fmt.Errorf("github fast-path: tree unavailable")
+		return nil, "", false
 	}
-
-	// Map skill folder path -> tree SHA, and collect blob paths to download.
-	folderSHA := map[string]string{}
-	shaByPath := map[string]string{}
-	var skillFolders []string
-	for _, e := range tree.Tree {
-		shaByPath[e.Path] = e.SHA
-	}
-	for _, e := range tree.Tree {
-		if e.Type == "blob" && strings.EqualFold(path.Base(e.Path), "SKILL.md") {
-			folder := path.Dir(e.Path)
-			if folder == "." {
-				folder = ""
-			}
-			if !isSkillContainerPath(folder) {
-				continue
-			}
-			skillFolders = append(skillFolders, folder)
-			if folder == "" {
-				folderSHA[folder] = tree.SHA
-			} else if sha, ok := shaByPath[folder]; ok {
-				folderSHA[folder] = sha
-			}
-		}
-	}
-	if len(skillFolders) == 0 {
-		return Fetched{}, fmt.Errorf("github fast-path: no skills found")
-	}
-
-	tmpDir, err := os.MkdirTemp("", "skills-gh-*")
-	if err != nil {
-		return Fetched{}, err
-	}
-	cleanup := func() { _ = os.RemoveAll(tmpDir) }
-
-	// Download every blob that lives under a discovered skill folder.
-	prefixes := make([]string, 0, len(skillFolders))
-	for _, f := range skillFolders {
-		prefixes = append(prefixes, f+"/")
-	}
-	for _, e := range tree.Tree {
-		if e.Type != "blob" || !underAnyPrefix(e.Path, prefixes) {
-			continue
-		}
-		data, err := fetchRaw(ctx, src.OwnerRepo, branch, e.Path)
-		if err != nil {
-			cleanup()
-			return Fetched{}, err
-		}
-		dst := filepath.Join(tmpDir, filepath.FromSlash(e.Path))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			cleanup()
-			return Fetched{}, err
-		}
-		if err := os.WriteFile(dst, data, 0o644); err != nil {
-			cleanup()
-			return Fetched{}, err
-		}
-	}
-
-	return Fetched{
-		Dir:      tmpDir,
-		Cleanup:  cleanup,
-		HashKind: config.HashKindTreeSHA,
-		FolderHash: func(skillPathInRepo string) (string, error) {
-			key := strings.TrimSuffix(filepath.ToSlash(skillPathInRepo), "/")
-			if sha, ok := folderSHA[key]; ok {
-				return sha, nil
-			}
-			return "", fmt.Errorf("no tree sha for %q", skillPathInRepo)
-		},
-	}, nil
-}
-
-// isSkillContainerPath reports whether a skill folder lives in a recognized
-// container (repo root, skills/, .agents/skills/, .<agent>/skills/).
-func isSkillContainerPath(folder string) bool {
-	if folder == "" {
-		return true
-	}
-	if strings.HasPrefix(folder, "skills/") || folder == "skills" {
-		return true
-	}
-	if strings.Contains(folder, ".agents/skills/") || strings.HasSuffix(folder, ".agents/skills") {
-		return true
-	}
-	// .<agent>/skills/<name>
-	parts := strings.Split(folder, "/")
-	for i, p := range parts {
-		if strings.HasPrefix(p, ".") && i+1 < len(parts) && parts[i+1] == "skills" {
-			return true
-		}
-	}
-	return false
-}
-
-func underAnyPrefix(p string, prefixes []string) bool {
-	for _, pre := range prefixes {
-		if strings.HasPrefix(p, pre) {
-			return true
-		}
-	}
-	return false
+	return folderSHAIndex(tree), config.HashKindTreeSHA, true
 }
 
 func fetchTree(ctx context.Context, ownerRepo, branch string) (*ghTree, error) {
@@ -229,9 +189,11 @@ func fetchTree(ctx context.Context, ownerRepo, branch string) (*ghTree, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "skills-cli")
+	if tok := githubToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
 
-	client := &http.Client{Timeout: fetchTimeout}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -244,23 +206,4 @@ func fetchTree(ctx context.Context, ownerRepo, branch string) (*ghTree, error) {
 		return nil, err
 	}
 	return &t, nil
-}
-
-func fetchRaw(ctx context.Context, ownerRepo, branch, p string) ([]byte, error) {
-	u := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", ownerRepo, branch, p)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "skills-cli")
-	client := &http.Client{Timeout: fetchTimeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("raw fetch %s: status %d", p, resp.StatusCode)
-	}
-	return io.ReadAll(io.LimitReader(resp.Body, 5<<20))
 }

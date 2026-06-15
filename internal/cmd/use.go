@@ -31,23 +31,13 @@ func runUse(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	raw := cmd.Args().First()
-	skillName := cmd.String("skill")
-
-	// Extract a trailing "@<skill>" selector for sources whose parser doesn't
-	// (local paths, generic git). Skip when the suffix looks like part of an
-	// SSH URL or path (contains "/" or ":").
-	if skillName == "" {
-		if i := strings.LastIndex(raw, "@"); i > 0 {
-			if suffix := raw[i+1:]; suffix != "" && !strings.ContainsAny(suffix, "/:") {
-				raw, skillName = raw[:i], suffix
-			}
-		}
-	}
-
 	src, err := source.Parse(raw)
 	if err != nil {
 		return err
 	}
+
+	// -s/--skill overrides the source's own @<skill> selector.
+	skillName := cmd.String("skill")
 	if skillName == "" {
 		skillName = src.SkillFilter
 	}

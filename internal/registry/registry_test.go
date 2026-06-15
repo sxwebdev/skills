@@ -23,6 +23,9 @@ func TestScanRepo(t *testing.T) {
 
 	writeSkill(t, filepath.Join(repo, "skills", "alpha"), "---\nname: alpha\ndescription: First\n---\nbody")
 	writeSkill(t, filepath.Join(repo, ".agents", "skills", "beta"), "---\nname: beta\ndescription: Second\n---\nbody")
+	// A skill under an agent-specific container (e.g. .claude/skills/) must also
+	// be discovered, matching the documented layout and the GitHub fast-path.
+	writeSkill(t, filepath.Join(repo, ".claude", "skills", "gamma"), "---\nname: gamma\ndescription: Third\n---\nbody")
 	// A directory without SKILL.md should be ignored.
 	if err := os.MkdirAll(filepath.Join(repo, "skills", "not-a-skill"), 0o755); err != nil {
 		t.Fatal(err)
@@ -38,8 +41,8 @@ func TestScanRepo(t *testing.T) {
 		names[i] = s.Name
 	}
 	slices.Sort(names)
-	if !slices.Equal(names, []string{"alpha", "beta"}) {
-		t.Errorf("ScanRepo names = %v, want [alpha beta]", names)
+	if !slices.Equal(names, []string{"alpha", "beta", "gamma"}) {
+		t.Errorf("ScanRepo names = %v, want [alpha beta gamma]", names)
 	}
 }
 

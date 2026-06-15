@@ -126,6 +126,38 @@ func TestParseLocal(t *testing.T) {
 	}
 }
 
+func TestParseSkillSuffix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		in    string
+		kind  Kind
+		skill string
+	}{
+		{"local @skill", "./src@demo", KindLocal, "demo"},
+		{"github shorthand @skill", "owner/repo@pdf", KindGitHub, "pdf"},
+		{"generic git .git @skill", "https://git.example.com/o/r.git@thing", KindGit, "thing"},
+		{"ssh not split", "git@github.com:o/r.git", KindGit, ""},
+		{"ssh scheme not split", "ssh://git@host:22/o/r.git", KindGit, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := Parse(tt.in)
+			if err != nil {
+				t.Fatalf("Parse(%q) error: %v", tt.in, err)
+			}
+			if got.Kind != tt.kind {
+				t.Errorf("Kind = %v, want %v", got.Kind, tt.kind)
+			}
+			if got.SkillFilter != tt.skill {
+				t.Errorf("SkillFilter = %q, want %q", got.SkillFilter, tt.skill)
+			}
+		})
+	}
+}
+
 func TestFindNoMatch(t *testing.T) {
 	t.Parallel()
 	// An empty string matches nothing.

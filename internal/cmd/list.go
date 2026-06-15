@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/sxwebdev/skills/internal/config"
 	"github.com/sxwebdev/skills/internal/ui"
@@ -69,53 +69,13 @@ func runList(_ context.Context, cmd *cli.Command) error {
 
 		for _, name := range slices.Sorted(slices.Values(bySource[repoKey])) {
 			skill := filtered[name]
-			status := skillStatus(name, skill)
+			status := "ok"
+			if issues := skillLinkIssues(name, skill); len(issues) > 0 {
+				status = strings.Join(issues, ", ")
+			}
 			extra := fmt.Sprintf("[%s] %s · %s", scopeOf(skill), skill.Mode, status)
 			ui.Skill(name, "", extra)
 		}
 	}
 	return nil
-}
-
-func scopeOf(skill config.SkillInfo) string {
-	if skill.Project == "" {
-		return "global"
-	}
-	return skill.Project
-}
-
-// skillStatus checks the install directory and agent links (symlink or copy).
-func skillStatus(name string, skill config.SkillInfo) string {
-	skillDir := filepath.Join(config.ResolveSkillsInstallDir(skill.Project), name)
-	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
-		return "missing"
-	}
-
-	for _, agent := range skill.Agents {
-		agentDir := config.ResolveAgentSkillsDir(skill.Project, agent)
-		if agentDir == "" {
-			continue
-		}
-		linkPath := filepath.Join(agentDir, name)
-
-		if skill.Mode == config.ModeCopy {
-			if _, err := os.Stat(linkPath); err != nil {
-				return "missing copy (" + agent + ")"
-			}
-			continue
-		}
-
-		target, err := os.Readlink(linkPath)
-		if err != nil {
-			return "no symlink (" + agent + ")"
-		}
-		abs := target
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(agentDir, target)
-		}
-		if _, err := os.Stat(abs); os.IsNotExist(err) {
-			return "broken symlink (" + agent + ")"
-		}
-	}
-	return "ok"
 }

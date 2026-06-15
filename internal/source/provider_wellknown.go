@@ -30,6 +30,7 @@ type wellKnownProvider struct{}
 
 func (wellKnownProvider) Match(raw string) bool {
 	base, _, _ := splitFragment(raw)
+	base, _ = splitSkillSuffix(base)
 	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
 		return false
 	}
@@ -42,6 +43,8 @@ func (wellKnownProvider) Match(raw string) bool {
 
 func (wellKnownProvider) Parse(raw string) (Source, error) {
 	base, _, skill := splitFragment(raw)
+	base, suffixSkill := splitSkillSuffix(base)
+	skill = firstNonEmpty(skill, suffixSkill)
 	return Source{
 		Kind:        KindWellKnown,
 		Raw:         raw,
@@ -357,8 +360,7 @@ func httpGet(ctx context.Context, u string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "skills-cli")
-	client := &http.Client{Timeout: fetchTimeout}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

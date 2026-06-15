@@ -25,11 +25,11 @@ func cloneFetch(ctx context.Context, src Source) (Fetched, error) {
 // clonedDirFetched builds a Fetched over an on-disk repo directory.
 func clonedDirFetched(dir string, cleanup func()) Fetched {
 	return Fetched{
-		Dir:      dir,
-		Cleanup:  cleanup,
-		HashKind: config.HashKindSHA1,
-		FolderHash: func(skillPathInRepo string) (string, error) {
-			return gitutil.ComputeFolderHash(filepath.Join(dir, skillPathInRepo))
+		Dir:     dir,
+		Cleanup: cleanup,
+		FolderHash: func(skillPathInRepo string) (string, string, error) {
+			h, err := gitutil.ComputeFolderHash(filepath.Join(dir, skillPathInRepo))
+			return h, config.HashKindSHA1, err
 		},
 	}
 }
@@ -41,15 +41,17 @@ type localProvider struct{}
 func (localProvider) Match(raw string) bool { return isLocalPath(raw) }
 
 func (localProvider) Parse(raw string) (Source, error) {
-	abs, err := filepath.Abs(raw)
+	base, skill := splitSkillSuffix(raw)
+	abs, err := filepath.Abs(base)
 	if err != nil {
 		return Source{}, fmt.Errorf("resolve local path: %w", err)
 	}
 	return Source{
-		Kind:     KindLocal,
-		Raw:      raw,
-		LocalDir: abs,
-		Alias:    filepath.Base(abs),
+		Kind:        KindLocal,
+		Raw:         raw,
+		LocalDir:    abs,
+		SkillFilter: skill,
+		Alias:       filepath.Base(abs),
 	}, nil
 }
 
@@ -129,6 +131,7 @@ type gitProvider struct{}
 
 func (gitProvider) Match(raw string) bool {
 	base, _, _ := splitFragment(raw)
+	base, _ = splitSkillSuffix(base)
 	if strings.HasPrefix(base, "git@") || strings.HasPrefix(base, "ssh://") {
 		return true
 	}
@@ -140,6 +143,8 @@ func (gitProvider) Match(raw string) bool {
 
 func (gitProvider) Parse(raw string) (Source, error) {
 	base, ref, skill := splitFragment(raw)
+	base, suffixSkill := splitSkillSuffix(base)
+	skill = firstNonEmpty(skill, suffixSkill)
 
 	if m := sshGitRe.FindStringSubmatch(base); m != nil {
 		return gitSource(raw, base, m[1], m[2], ref, skill), nil
