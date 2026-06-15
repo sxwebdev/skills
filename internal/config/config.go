@@ -9,6 +9,21 @@ import (
 	"time"
 )
 
+// SchemaVersion is the current config schema version.
+const SchemaVersion = 2
+
+// Hash kinds for SkillInfo.HashKind.
+const (
+	HashKindSHA1    = "sha1"     // local deterministic folder hash (clone/local sources)
+	HashKindTreeSHA = "tree-sha" // GitHub git-tree SHA (fast-path, no clone)
+)
+
+// Install modes for SkillInfo.Mode.
+const (
+	ModeSymlink = "symlink"
+	ModeCopy    = "copy"
+)
+
 type Config struct {
 	Version int                  `json:"version"`
 	Repos   map[string]RepoInfo  `json:"repos"`
@@ -25,6 +40,11 @@ type SkillInfo struct {
 	Repo        string    `json:"repo"`
 	PathInRepo  string    `json:"path_in_repo"`
 	FolderHash  string    `json:"folder_hash"`
+	HashKind    string    `json:"hash_kind,omitempty"` // "sha1" | "tree-sha"
+	Agents      []string  `json:"agents,omitempty"`    // agents this skill is linked into
+	Mode        string    `json:"mode,omitempty"`      // "symlink" | "copy"
+	Ref         string    `json:"ref,omitempty"`       // pinned branch/tag of the source
+	Subpath     string    `json:"subpath,omitempty"`   // subpath within the source repo
 	InstalledAt time.Time `json:"installed_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	Project     string    `json:"project,omitempty"` // empty = global, otherwise absolute path to project root
@@ -33,7 +53,7 @@ type SkillInfo struct {
 // NewDefault creates a default config.
 func NewDefault() *Config {
 	return &Config{
-		Version: 1,
+		Version: SchemaVersion,
 		Repos:   make(map[string]RepoInfo),
 		Skills:  make(map[string]SkillInfo),
 		Agents:  []string{"claude-code"},
@@ -56,7 +76,49 @@ func Load() (*Config, error) {
 	if cfg.Skills == nil {
 		cfg.Skills = make(map[string]SkillInfo)
 	}
+	if cfg.migrate() {
+		// Best-effort sticky migration; ignore save errors (e.g. read-only FS).
+		_ = cfg.Save()
+	}
 	return &cfg, nil
+}
+
+// LoadOrCreate loads the config, or returns a fresh default (without writing)
+// if it does not exist yet. The file is only created on the first Save.
+func LoadOrCreate() (*Config, error) {
+	cfg, err := Load()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return NewDefault(), nil
+		}
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// migrate upgrades an older config in place. It returns true if anything changed.
+func (c *Config) migrate() bool {
+	if c.Version >= SchemaVersion {
+		return false
+	}
+
+	if len(c.Agents) == 0 {
+		c.Agents = []string{"claude-code"}
+	}
+	for name, skill := range c.Skills {
+		if len(skill.Agents) == 0 {
+			skill.Agents = append([]string(nil), c.Agents...)
+		}
+		if skill.Mode == "" {
+			skill.Mode = ModeSymlink
+		}
+		if skill.HashKind == "" {
+			skill.HashKind = HashKindSHA1
+		}
+		c.Skills[name] = skill
+	}
+	c.Version = SchemaVersion
+	return true
 }
 
 // MustLoad loads the config or exits with a helpful message.

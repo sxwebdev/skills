@@ -2,141 +2,132 @@ package cmd
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/sxwebdev/skills/internal/config"
-	"github.com/sxwebdev/skills/internal/gitutil"
 	"github.com/sxwebdev/skills/internal/installer"
+	"github.com/sxwebdev/skills/internal/source"
+	"github.com/sxwebdev/skills/internal/ui"
 	"github.com/urfave/cli/v3"
 )
 
 func UpdateCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "update",
-		Usage:     "Update installed skills from their repositories",
-		ArgsUsage: "[owner/repo]",
+		Aliases:   []string{"upgrade", "check"},
+		Usage:     "Update installed skills from their sources",
+		ArgsUsage: "[skills...]",
 		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "skill",
-				Aliases: []string{"s"},
-				Usage:   "Update only a specific skill",
-			},
-			&cli.BoolFlag{
-				Name:  "dry-run",
-				Usage: "Show what would change without applying",
-			},
+			globalFlag(), agentFlag(), yesFlag(),
+			&cli.BoolFlag{Name: "dry-run", Usage: "Show what would change without applying"},
 		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			projectRoot, err := resolveProject(cmd)
-			if err != nil {
-				return err
-			}
-
-			cfg := config.MustLoad()
-			dryRun := cmd.Bool("dry-run")
-			filterSkill := cmd.String("skill")
-			filterRepo := cmd.Args().First() // optional owner/repo
-
-			// Filter skills by project if --local or --project
-			skills := cfg.Skills
-			if projectRoot != "" {
-				skills = make(map[string]config.SkillInfo)
-				for name, skill := range cfg.Skills {
-					if skill.Project == projectRoot {
-						skills[name] = skill
-					}
-				}
-			}
-
-			if len(skills) == 0 {
-				fmt.Println("No skills installed.")
-				return nil
-			}
-
-			// Group skills by repo
-			repoSkills := make(map[string][]string)
-			for name, skill := range skills {
-				if filterSkill != "" && name != filterSkill {
-					continue
-				}
-				if filterRepo != "" && AliasFromURL(skill.Repo) != filterRepo {
-					continue
-				}
-				repoSkills[skill.Repo] = append(repoSkills[skill.Repo], name)
-			}
-
-			if filterSkill != "" && len(repoSkills) == 0 {
-				return fmt.Errorf("skill %q not found", filterSkill)
-			}
-			if filterRepo != "" && len(repoSkills) == 0 {
-				return fmt.Errorf("no skills found from repo %q", filterRepo)
-			}
-
-			var updated, upToDate int
-
-			for repoURL, skillNames := range repoSkills {
-				fmt.Printf("Checking %s. Please wait...\n", AliasFromURL(repoURL))
-
-				tmpDir, err := gitutil.CloneShallow(ctx, repoURL)
-				if err != nil {
-					fmt.Printf("⚠ Failed to clone %s: %v\n", AliasFromURL(repoURL), err)
-					continue
-				}
-
-				for _, name := range skillNames {
-					skill := cfg.Skills[name]
-					srcDir := filepath.Join(tmpDir, skill.PathInRepo)
-
-					if _, err := os.Stat(srcDir); os.IsNotExist(err) {
-						fmt.Printf("  ⚠ %s: no longer exists in repo\n", name)
-						continue
-					}
-
-					newHash, err := gitutil.ComputeFolderHash(srcDir)
-					if err != nil {
-						fmt.Printf("  ⚠ %s: hash error: %v\n", name, err)
-						continue
-					}
-
-					if newHash == skill.FolderHash {
-						upToDate++
-						continue
-					}
-
-					if dryRun {
-						fmt.Printf("  ~ %s (would update)\n", name)
-						updated++
-						continue
-					}
-
-					if err := installer.InstallSkill(name, srcDir, cfg.Agents, skill.Project); err != nil {
-						fmt.Printf("  ⚠ %s: install failed: %v\n", name, err)
-						continue
-					}
-
-					skill.FolderHash = newHash
-					skill.UpdatedAt = time.Now().UTC()
-					cfg.Skills[name] = skill
-					updated++
-					fmt.Printf("  ✓ %s updated\n", name)
-				}
-
-				if err := os.RemoveAll(tmpDir); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: failed to clean up temp dir %s: %v\n", tmpDir, err)
-				}
-			}
-
-			if !dryRun {
-				if err := cfg.Save(); err != nil {
-					return err
-				}
-			}
-
-			fmt.Printf("\n%d updated, %d up to date\n", updated, upToDate)
-			return nil
-		},
+		Action: runUpdate,
 	}
+}
+
+func runUpdate(ctx context.Context, cmd *cli.Command) error {
+	projectRoot, err := resolveScope(cmd)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := config.LoadOrCreate()
+	if err != nil {
+		return err
+	}
+	dryRun := cmd.Bool("dry-run")
+	nameFilter := cmd.Args().Slice()
+
+	// Select in-scope skills, optionally filtered by name.
+	selected := map[string]config.SkillInfo{}
+	for name, skill := range cfg.Skills {
+		if projectRoot != "" && skill.Project != projectRoot {
+			continue
+		}
+		if len(nameFilter) > 0 && !slices.Contains(nameFilter, name) {
+			continue
+		}
+		selected[name] = skill
+	}
+	if len(selected) == 0 {
+		ui.Info("No skills to update.")
+		return nil
+	}
+
+	// Group by source key so each source is fetched once.
+	bySource := map[string][]string{}
+	for name, skill := range selected {
+		bySource[skill.Repo] = append(bySource[skill.Repo], name)
+	}
+
+	var updated, upToDate int
+	for repoKey, names := range bySource {
+		src, err := source.Parse(repoKey)
+		if err != nil {
+			ui.Warn("Skipping %s: %v", repoKey, err)
+			continue
+		}
+		// Reuse the pinned ref of the first skill in the group.
+		src.Ref = selected[names[0]].Ref
+
+		ui.Info("Checking %s…", src.Alias)
+		fetched, err := source.Find(repoKey).Fetch(ctx, src)
+		if err != nil {
+			ui.Warn("Failed to fetch %s: %v", src.Alias, err)
+			continue
+		}
+
+		for _, name := range names {
+			skill := cfg.Skills[name]
+			newHash, err := fetched.FolderHash(skill.PathInRepo)
+			if err != nil {
+				ui.Warn("%s: %v", name, err)
+				continue
+			}
+			if newHash == skill.FolderHash && fetched.HashKind == skill.HashKind {
+				upToDate++
+				continue
+			}
+			if dryRun {
+				ui.Info("~ %s (would update)", name)
+				updated++
+				continue
+			}
+
+			agentList := skill.Agents
+			if len(agentList) == 0 {
+				agentList, _ = resolveAgents(cmd, cfg)
+			}
+			mode, err := installer.InstallSkill(installer.InstallOpts{
+				Name:        name,
+				SrcDir:      filepath.Join(fetched.Dir, skill.PathInRepo),
+				Agents:      agentList,
+				ProjectRoot: skill.Project,
+				ForceCopy:   skill.Mode == config.ModeCopy,
+			})
+			if err != nil {
+				ui.Warn("%s: install failed: %v", name, err)
+				continue
+			}
+
+			skill.FolderHash = newHash
+			skill.HashKind = fetched.HashKind
+			skill.Mode = mode
+			skill.UpdatedAt = time.Now().UTC()
+			cfg.Skills[name] = skill
+			updated++
+			ui.Success("%s updated", name)
+		}
+		fetched.Cleanup()
+	}
+
+	if !dryRun {
+		if err := cfg.Save(); err != nil {
+			return err
+		}
+	}
+	ui.Info("\n%d updated, %d up to date", updated, upToDate)
+	return nil
 }

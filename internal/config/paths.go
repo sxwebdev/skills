@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/sxwebdev/skills/internal/agents"
 )
 
 func HomeDir() string {
@@ -29,14 +31,9 @@ func SkillsInstallDir() string {
 	return filepath.Join(HomeDir(), ".agents", "skills")
 }
 
-// AgentSkillsDir returns the global agent skills directory.
+// AgentSkillsDir returns the global agent skills directory for the named agent.
 func AgentSkillsDir(agent string) string {
-	switch agent {
-	case "claude-code":
-		return filepath.Join(HomeDir(), ".claude", "skills")
-	default:
-		return ""
-	}
+	return agents.ResolveGlobalDir(agent)
 }
 
 // ResolveSkillsInstallDir returns the skills install dir for the given project.
@@ -52,14 +49,9 @@ func ResolveSkillsInstallDir(projectRoot string) string {
 // If projectRoot is empty, returns the global directory.
 func ResolveAgentSkillsDir(projectRoot, agent string) string {
 	if projectRoot == "" {
-		return AgentSkillsDir(agent)
+		return agents.ResolveGlobalDir(agent)
 	}
-	switch agent {
-	case "claude-code":
-		return filepath.Join(projectRoot, ".claude", "skills")
-	default:
-		return ""
-	}
+	return agents.ResolveProjectDir(agent, projectRoot)
 }
 
 // FindProjectRoot walks up from cwd looking for a .git directory.

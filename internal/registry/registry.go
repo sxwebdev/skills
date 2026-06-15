@@ -67,6 +67,17 @@ func ScanRepo(repoDir string) ([]DiscoveredSkill, error) {
 	return skills, nil
 }
 
+// ReadSkillMeta reads a skill's name and description from <dir>/SKILL.md,
+// falling back to the directory base name if the frontmatter is missing.
+func ReadSkillMeta(dir string) (name, description string, err error) {
+	data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	if err != nil {
+		return "", "", err
+	}
+	name, description = parseFrontmatter(data, filepath.Base(dir))
+	return name, description, nil
+}
+
 type frontmatter struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
