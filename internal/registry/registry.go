@@ -17,14 +17,24 @@ type DiscoveredSkill struct {
 	AbsPath     string // absolute path in temp clone
 }
 
-// ScanRepo scans a cloned repo directory for skills.
-// It looks for skills in .agents/skills/ and skills/ directories.
+// ScanRepo scans a cloned repo directory for skills. It looks for skills in
+// skills/, .agents/skills/, and any .<agent>/skills/ container (e.g.
+// .claude/skills/, .cursor/skills/) so on-disk discovery matches the GitHub
+// fast-path and the documented layout.
 func ScanRepo(repoDir string) ([]DiscoveredSkill, error) {
 	var skills []DiscoveredSkill
 
 	searchPaths := []string{
-		filepath.Join(repoDir, ".agents", "skills"),
 		filepath.Join(repoDir, "skills"),
+		filepath.Join(repoDir, ".agents", "skills"),
+	}
+	// Add any top-level dotdir that holds a skills/ subdir (.claude, .cursor, …).
+	if entries, err := os.ReadDir(repoDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() && strings.HasPrefix(e.Name(), ".") && e.Name() != ".git" && e.Name() != ".agents" {
+				searchPaths = append(searchPaths, filepath.Join(repoDir, e.Name(), "skills"))
+			}
+		}
 	}
 
 	for _, searchPath := range searchPaths {
@@ -65,6 +75,17 @@ func ScanRepo(repoDir string) ([]DiscoveredSkill, error) {
 	}
 
 	return skills, nil
+}
+
+// ReadSkillMeta reads a skill's name and description from <dir>/SKILL.md,
+// falling back to the directory base name if the frontmatter is missing.
+func ReadSkillMeta(dir string) (name, description string, err error) {
+	data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	if err != nil {
+		return "", "", err
+	}
+	name, description = parseFrontmatter(data, filepath.Base(dir))
+	return name, description, nil
 }
 
 type frontmatter struct {
