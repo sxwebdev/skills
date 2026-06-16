@@ -122,20 +122,6 @@ func (c *Config) migrate() bool {
 	return true
 }
 
-// MustLoad loads the config or exits with a helpful message.
-func MustLoad() *Config {
-	cfg, err := Load()
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			fmt.Fprintln(os.Stderr, "Config not found. Run 'skills init' first.")
-			os.Exit(1)
-		}
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
-	return cfg
-}
-
 // Save writes the config to disk atomically.
 func (c *Config) Save() error {
 	dir := ConfigDir()
