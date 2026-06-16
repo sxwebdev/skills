@@ -13,7 +13,7 @@ import (
 
 const skillTemplate = `---
 name: %s
-description: [One or two sentences: what this skill does AND when it should trigger — include keywords, file types, and user-intent phrases.]
+description: One or two sentences describing what this skill does AND when it should trigger — include keywords, file types, and user-intent phrases.
 ---
 
 # %s
