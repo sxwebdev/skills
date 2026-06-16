@@ -72,6 +72,12 @@ func TestParse(t *testing.T) {
 			kind: KindGit, cloneURL: "git@gitea.example.com:o/r.git", ownerRepo: "o/r",
 		},
 		{
+			// SSH GitLab URLs go to the generic git provider (clone via SSH keys),
+			// not the GitLab provider, which only parses HTTPS forms.
+			name: "gitlab ssh subgroups", in: "git@gitlab.com:group/sub/repo.git",
+			kind: KindGit, cloneURL: "git@gitlab.com:group/sub/repo.git", ownerRepo: "group/sub/repo",
+		},
+		{
 			name: "generic git ssh scheme", in: "ssh://git@host:7999/o/r.git",
 			kind: KindGit, cloneURL: "ssh://git@host:7999/o/r.git", ownerRepo: "o/r",
 		},

@@ -69,6 +69,11 @@ type gitlabProvider struct{}
 
 func (gitlabProvider) Match(raw string) bool {
 	base, _, _ := splitFragment(raw)
+	// SSH/scp-style URLs (git@host:..., ssh://...) are handled by the generic
+	// git provider, which clones via system git and honors the user's SSH keys.
+	if strings.HasPrefix(base, "git@") || strings.HasPrefix(base, "ssh://") {
+		return false
+	}
 	if strings.HasPrefix(base, "gitlab:") {
 		return true
 	}

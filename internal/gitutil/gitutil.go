@@ -75,13 +75,13 @@ func Clone(ctx context.Context, url, ref string) (string, error) {
 		return tmpDir, nil
 	}
 
-	// Auth fallbacks for GitHub HTTPS.
-	if isAuthFailure(errMsg) && isGitHubHTTPS(url) {
-		if owner, repo, ok := parseGitHubOwnerRepo(url); ok {
-			if dir, ok := retryAuth(ctx, owner, repo, ref); ok {
-				_ = os.RemoveAll(tmpDir)
-				return dir, nil
-			}
+	// Auth fallbacks for HTTPS clones that hit a credential prompt. GitHub gets
+	// a `gh repo clone` attempt first; every host (GitHub, GitLab, self-hosted)
+	// then falls back to SSH, which honors the user's configured SSH keys.
+	if isAuthFailure(errMsg) {
+		if dir, ok := retryAuth(ctx, url, ref); ok {
+			_ = os.RemoveAll(tmpDir)
+			return dir, nil
 		}
 	}
 
@@ -101,28 +101,35 @@ func runGit(ctx context.Context, args []string) (string, error) {
 	return stderr.String(), err
 }
 
-func retryAuth(ctx context.Context, owner, repo, ref string) (string, bool) {
-	slug := owner + "/" + repo
+// retryAuth retries a failed HTTPS clone using auth that doesn't need a
+// credential prompt: `gh repo clone` for GitHub, then SSH for any host.
+func retryAuth(ctx context.Context, url, ref string) (string, bool) {
+	host, slug, ok := parseHTTPSOwnerRepo(url)
+	if !ok {
+		return "", false
+	}
 
-	// Try `gh repo clone` (uses GitHub CLI auth) if gh is available.
-	if _, err := exec.LookPath("gh"); err == nil {
-		dir, derr := os.MkdirTemp("", "skills-clone-*")
-		if derr == nil {
-			ghArgs := []string{"repo", "clone", slug, dir, "--", "--depth=1"}
-			if ref != "" {
-				ghArgs = append(ghArgs, "--branch", ref)
+	// Try `gh repo clone` (uses GitHub CLI auth) for GitHub when gh is present.
+	if host == "github.com" {
+		if _, err := exec.LookPath("gh"); err == nil {
+			dir, derr := os.MkdirTemp("", "skills-clone-*")
+			if derr == nil {
+				ghArgs := []string{"repo", "clone", slug, dir, "--", "--depth=1"}
+				if ref != "" {
+					ghArgs = append(ghArgs, "--branch", ref)
+				}
+				cmd := exec.CommandContext(ctx, "gh", ghArgs...)
+				cmd.Env = cloneEnv()
+				if cmd.Run() == nil {
+					return dir, true
+				}
+				_ = os.RemoveAll(dir)
 			}
-			cmd := exec.CommandContext(ctx, "gh", ghArgs...)
-			cmd.Env = cloneEnv()
-			if cmd.Run() == nil {
-				return dir, true
-			}
-			_ = os.RemoveAll(dir)
 		}
 	}
 
-	// Fall back to SSH.
-	sshURL := fmt.Sprintf("git@github.com:%s.git", slug)
+	// Fall back to SSH (honors the user's configured SSH keys).
+	sshURL := fmt.Sprintf("git@%s:%s.git", host, slug)
 	dir, derr := os.MkdirTemp("", "skills-clone-*")
 	if derr != nil {
 		return "", false
@@ -152,18 +159,24 @@ func isAuthFailure(msg string) bool {
 	return false
 }
 
-func isGitHubHTTPS(url string) bool {
-	return strings.HasPrefix(url, "https://github.com/")
-}
-
-func parseGitHubOwnerRepo(url string) (owner, repo string, ok bool) {
-	rest := strings.TrimPrefix(url, "https://github.com/")
-	rest = strings.TrimSuffix(rest, ".git")
-	parts := strings.Split(rest, "/")
-	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+// parseHTTPSOwnerRepo splits an HTTPS git URL into its host and "owner/repo"
+// slug (which may include GitLab subgroups, e.g. "group/sub/repo"). Returns
+// ok=false for non-HTTPS URLs or URLs without at least a host and one path
+// segment owner plus a repo.
+func parseHTTPSOwnerRepo(url string) (host, slug string, ok bool) {
+	rest, found := strings.CutPrefix(url, "https://")
+	if !found {
 		return "", "", false
 	}
-	return parts[0], parts[1], true
+	host, slug, found = strings.Cut(rest, "/")
+	if !found || host == "" {
+		return "", "", false
+	}
+	slug = strings.TrimSuffix(strings.Trim(slug, "/"), ".git")
+	if !strings.Contains(slug, "/") {
+		return "", "", false
+	}
+	return host, slug, true
 }
 
 // ComputeFolderHash computes a deterministic SHA1 hash of all files in a directory.
