@@ -85,12 +85,10 @@ func runRemove(_ context.Context, cmd *cli.Command) error {
 			ui.Warn("Skill %q is not installed", name)
 			continue
 		}
-		if err := installer.RemoveSkill(name, skill.Agents, skill.Project); err != nil {
+		if err := removeOne(cfg, name, skill); err != nil {
 			ui.Warn("Failed to remove %s: %v", name, err)
 			continue
 		}
-		delete(cfg.Skills, name)
-		pruneRepo(cfg, skill.Repo)
 		ui.Success("%s removed", name)
 		removed++
 	}
@@ -169,6 +167,18 @@ func matchSource(cfg *config.Config, arg string) (string, bool) {
 
 func inScope(skill config.SkillInfo, projectRoot string) bool {
 	return projectRoot == "" || skill.Project == projectRoot
+}
+
+// removeOne uninstalls a skill (its install dir + agent links) and drops it,
+// plus its now-orphaned source, from the config. It does not save — the caller
+// persists cfg. Shared by `remove` and `update`'s vanished-skill cleanup.
+func removeOne(cfg *config.Config, name string, skill config.SkillInfo) error {
+	if err := installer.RemoveSkill(name, skill.Agents, skill.Project); err != nil {
+		return err
+	}
+	delete(cfg.Skills, name)
+	pruneRepo(cfg, skill.Repo)
+	return nil
 }
 
 // pruneRepo drops a source from the registry once no skills reference it.

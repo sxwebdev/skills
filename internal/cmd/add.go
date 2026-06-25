@@ -121,38 +121,9 @@ func runAdd(ctx context.Context, cmd *cli.Command) error {
 			continue
 		}
 
-		mode, err := installer.InstallSkill(installer.InstallOpts{
-			Name:        skill.Name,
-			SrcDir:      skill.AbsPath,
-			Agents:      agentList,
-			ProjectRoot: projectRoot,
-			ForceCopy:   cmd.Bool("copy"),
-		})
-		if err != nil {
+		if err := installAndRecord(cfg, &fetched, src, repoKey, skill, agentList, projectRoot, cmd.Bool("copy")); err != nil {
 			ui.Warn("Failed to install %s: %v", skill.Name, err)
 			continue
-		}
-
-		hash, hashKind, err := fetched.FolderHash(skill.PathInRepo)
-		if err != nil {
-			ui.Warn("Failed to compute hash for %s: %v", skill.Name, err)
-			continue
-		}
-
-		now := time.Now().UTC()
-		cfg.Skills[skill.Name] = config.SkillInfo{
-			Repo:        repoKey,
-			Description: skill.Description,
-			PathInRepo:  skill.PathInRepo,
-			FolderHash:  hash,
-			HashKind:    hashKind,
-			Agents:      slices.Clone(agentList),
-			Mode:        mode,
-			Ref:         src.Ref,
-			Subpath:     src.Subpath,
-			InstalledAt: now,
-			UpdatedAt:   now,
-			Project:     projectRoot,
 		}
 		ui.Success("%s", skill.Name)
 		installed++
@@ -162,6 +133,46 @@ func runAdd(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	ui.Info("Done! %d skill(s) installed.", installed)
+	return nil
+}
+
+// installAndRecord installs one discovered skill and records it in cfg.Skills.
+// It is the install+record step shared by `add` and `update` (new-skill
+// discovery). The caller is responsible for the cross-repo duplicate guard and
+// for persisting cfg via cfg.Save.
+func installAndRecord(cfg *config.Config, fetched *source.Fetched, src source.Source, repoKey string,
+	skill registry.DiscoveredSkill, agentList []string, projectRoot string, forceCopy bool) error {
+	mode, err := installer.InstallSkill(installer.InstallOpts{
+		Name:        skill.Name,
+		SrcDir:      skill.AbsPath,
+		Agents:      agentList,
+		ProjectRoot: projectRoot,
+		ForceCopy:   forceCopy,
+	})
+	if err != nil {
+		return fmt.Errorf("install: %w", err)
+	}
+
+	hash, hashKind, err := fetched.FolderHash(skill.PathInRepo)
+	if err != nil {
+		return fmt.Errorf("compute hash: %w", err)
+	}
+
+	now := time.Now().UTC()
+	cfg.Skills[skill.Name] = config.SkillInfo{
+		Repo:        repoKey,
+		Description: skill.Description,
+		PathInRepo:  skill.PathInRepo,
+		FolderHash:  hash,
+		HashKind:    hashKind,
+		Agents:      slices.Clone(agentList),
+		Mode:        mode,
+		Ref:         src.Ref,
+		Subpath:     src.Subpath,
+		InstalledAt: now,
+		UpdatedAt:   now,
+		Project:     projectRoot,
+	}
 	return nil
 }
 

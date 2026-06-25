@@ -84,10 +84,13 @@ skills find pdf            # substring search over installed skills
 
 Updates installed skills from their sources. For GitHub, change detection uses a single git-tree-SHA request and only changed repos are re-cloned; for other sources it clones and compares a content hash.
 
+In an interactive terminal, an unfiltered `skills update` (no skill names, no `--yes`) also reconciles the source: it offers to install skills that have newly appeared in the source and to remove skills whose folder has disappeared from it (e.g. deleted or renamed). Non-interactively or with `--yes` it only updates the already-installed skills — a vanished skill is reported but never auto-removed. `--dry-run` previews everything (`~` updated, `+` new, `-` removed) without writing.
+
 ```bash
-skills update
-skills update my-skill         # a specific skill
+skills update                  # update + offer new/removed skills (interactive)
+skills update my-skill         # update a specific skill only (no discovery)
 skills update --dry-run        # show what would change
+skills update --yes            # non-interactive: update existing only
 ```
 
 ### `skills remove`
