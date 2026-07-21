@@ -26,10 +26,16 @@ func TestScanRepo(t *testing.T) {
 	// A skill under an agent-specific container (e.g. .claude/skills/) must also
 	// be discovered, matching the documented layout and the GitHub fast-path.
 	writeSkill(t, filepath.Join(repo, ".claude", "skills", "gamma"), "---\nname: gamma\ndescription: Third\n---\nbody")
+	// A skill nested under an arbitrary folder must also be discovered, matching
+	// layouts like questdb/skills (questdb/<skill>/SKILL.md).
+	writeSkill(t, filepath.Join(repo, "questdb", "delta"), "---\nname: delta\ndescription: Fourth\n---\nbody")
 	// A directory without SKILL.md should be ignored.
 	if err := os.MkdirAll(filepath.Join(repo, "skills", "not-a-skill"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// A SKILL.md inside a skill's own subdirectory is a resource, not a nested
+	// skill: discovery must stop at the first SKILL.md and not descend.
+	writeSkill(t, filepath.Join(repo, "skills", "alpha", "reference"), "---\nname: nested\ndescription: Should be ignored\n---\nbody")
 
 	skills, err := ScanRepo(repo)
 	if err != nil {
@@ -41,8 +47,8 @@ func TestScanRepo(t *testing.T) {
 		names[i] = s.Name
 	}
 	slices.Sort(names)
-	if !slices.Equal(names, []string{"alpha", "beta", "gamma"}) {
-		t.Errorf("ScanRepo names = %v, want [alpha beta gamma]", names)
+	if !slices.Equal(names, []string{"alpha", "beta", "delta", "gamma"}) {
+		t.Errorf("ScanRepo names = %v, want [alpha beta delta gamma]", names)
 	}
 }
 

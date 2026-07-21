@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,61 +18,48 @@ type DiscoveredSkill struct {
 	AbsPath     string // absolute path in temp clone
 }
 
-// ScanRepo scans a cloned repo directory for skills. It looks for skills in
-// skills/, .agents/skills/, and any .<agent>/skills/ container (e.g.
-// .claude/skills/, .cursor/skills/) so on-disk discovery matches the GitHub
-// fast-path and the documented layout.
+// ScanRepo scans a cloned repo directory for skills. It walks the whole repo
+// tree and treats any directory that contains a SKILL.md as a skill, wherever
+// it lives — skills/, .agents/skills/, .<agent>/skills/ (e.g. .claude/skills/)
+// as well as arbitrary nested layouts such as questdb/skills' questdb/<skill>/
+// SKILL.md. VCS metadata (.git) is skipped, and once a skill is found its own
+// subdirectories are treated as its resources rather than nested skills.
 func ScanRepo(repoDir string) ([]DiscoveredSkill, error) {
 	var skills []DiscoveredSkill
 
-	searchPaths := []string{
-		filepath.Join(repoDir, "skills"),
-		filepath.Join(repoDir, ".agents", "skills"),
-	}
-	// Add any top-level dotdir that holds a skills/ subdir (.claude, .cursor, …).
-	if entries, err := os.ReadDir(repoDir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() && strings.HasPrefix(e.Name(), ".") && e.Name() != ".git" && e.Name() != ".agents" {
-				searchPaths = append(searchPaths, filepath.Join(repoDir, e.Name(), "skills"))
-			}
-		}
-	}
-
-	for _, searchPath := range searchPaths {
-		entries, err := os.ReadDir(searchPath)
+	err := filepath.WalkDir(repoDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("read dir %s: %w", searchPath, err)
+			return err
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		// Never descend into VCS metadata or dependency directories.
+		if path != repoDir && (d.Name() == ".git" || d.Name() == "node_modules") {
+			return fs.SkipDir
 		}
 
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
+		data, readErr := os.ReadFile(filepath.Join(path, "SKILL.md"))
+		if readErr != nil {
+			if os.IsNotExist(readErr) {
+				return nil // not a skill directory; keep descending
 			}
-
-			skillDir := filepath.Join(searchPath, entry.Name())
-			skillMD := filepath.Join(skillDir, "SKILL.md")
-
-			data, err := os.ReadFile(skillMD)
-			if err != nil {
-				if os.IsNotExist(err) {
-					continue // not a skill directory
-				}
-				return nil, fmt.Errorf("read SKILL.md: %w", err)
-			}
-
-			name, description := parseFrontmatter(data, entry.Name())
-
-			rel, _ := filepath.Rel(repoDir, skillDir)
-			skills = append(skills, DiscoveredSkill{
-				Name:        name,
-				Description: description,
-				PathInRepo:  rel,
-				AbsPath:     skillDir,
-			})
+			return fmt.Errorf("read SKILL.md: %w", readErr)
 		}
+
+		name, description := parseFrontmatter(data, d.Name())
+		rel, _ := filepath.Rel(repoDir, path)
+		skills = append(skills, DiscoveredSkill{
+			Name:        name,
+			Description: description,
+			PathInRepo:  rel,
+			AbsPath:     path,
+		})
+		// A skill's own subdirectories are its resources, not nested skills.
+		return fs.SkipDir
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return skills, nil
